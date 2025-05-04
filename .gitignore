@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+output/*.log
+
+# Output and results
+/output/
+valid_*.json
+invalid_*.json
+
+# Actual sensitive config/wordlists
+/config/
+/wordlists/
+
+# Keep safe examples
+!config/config.example.json
+!wordlists/wordlist.example.json
+
+# Cache or temporary files
+*.tmp
+*.bak
+
+# IDE/project files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
