@@ -1,0 +1,9 @@
+{
+    "api_key": "YOUR_STEAM_API_KEY_HERE",
+    "check_interval_days": 7,
+    "log_file": "activity.log",
+    "retry_delay": 1,
+    "max_retries": 5,
+    "sem_limit": 2,
+    "ignore_skiplist": false
+}
