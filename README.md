@@ -4,7 +4,7 @@ Python script that checks for available Steam IDs for **user profiles** and **gr
 
 ---
 
-## 📦 Features
+## Features
 
 - Supports checking for both **profile** and **group** IDs
 - Logging to file and console
@@ -14,7 +14,7 @@ Python script that checks for available Steam IDs for **user profiles** and **gr
 
 ---
 
-## ⚙️ Setup
+## Setup
 
 ### 1. Clone the Repository
 
@@ -43,7 +43,7 @@ pip install aiohttp
 
 ---
 
-## 📝 Usage
+## Usage
 ```bash
 python steam-id-checker.py [mode] --wordlist [filename]
 ```
@@ -63,21 +63,14 @@ python steam-id-checker.py profile --wordlist list.json
 
 ---
 
-## 🛡️ Skiplist Behavior
+## Skiplist Behavior
 
 By default, the script skips IDs listed in config/skiplist_profile.json or config/skiplist_group.json. To override this behavior, set ignore_skipfile: true in your config file.
 
 ---
 
-## 🧪 Output
+## Output
 
-- ✅ Available IDs are saved in output/valid_profile.json or valid_group.json
-- ❌ Unavailable IDs are saved in output/invalid_profile.json or invalid_group.json
-- 🧾 Logs are saved to the path defined in log_file. (defaults to folder where script is ran in)
-	
----
-
-## 🧰 Requirements
-
-- Python 3.7+
-- aiohttp
+- Available IDs are saved in output/valid_profile.json or valid_group.json
+- Unavailable IDs are saved in output/invalid_profile.json or invalid_group.json
+- Logs are saved to the path defined in log_file. (defaults to folder where script is ran in)
