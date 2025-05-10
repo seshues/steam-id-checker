@@ -20,6 +20,7 @@ RETRY_DELAY = config.get("retry_delay", 1)
 MAX_RETRIES = config.get("max_retries", 5)
 SEM_LIMIT = config.get("sem_limit", 2)
 IGNORE_SKIPLIST = config.get("ignore_skiplist", False)
+IGNORE_CHECK_INTERVAL = config.get("ignore_check_interval", False)
 
 PROFILE_API = "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/"
 GROUP_API = "https://steamcommunity.com/groups/{}/memberslistxml?xml=1"
@@ -62,76 +63,85 @@ async def handle_rate_limit(entity_type, vanity_url, delay):
     return delay * 2
 
 async def check_id(session, vanity_url, valid_ids, invalid_ids, rate_limited_ids):
-    now = datetime.now(timezone.utc)
+    try:
+        vanity_url = vanity_url.lower()
+        now = datetime.now(timezone.utc)
 
-    if vanity_url in valid_ids:
-        return
-
-    if vanity_url in invalid_ids:
-        last_checked = datetime.strptime(invalid_ids[vanity_url], "%Y-%m-%d")
-        if now - last_checked < timedelta(days=CHECK_INTERVAL_DAYS):
+        if vanity_url in valid_ids:
             return
 
-    if vanity_url in rate_limited_ids:
-        last_rl = rate_limited_ids[vanity_url]
-        if now - last_rl < timedelta(minutes=5):
-            return
+        if vanity_url in invalid_ids:
+            if not IGNORE_CHECK_INTERVAL:
+                last_checked = datetime.strptime(invalid_ids[vanity_url], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                days_ago = (now - last_checked).days
+                if days_ago < CHECK_INTERVAL_DAYS:
+                    log_activity(f"[~] Skipped id: {vanity_url}. Checked {days_ago} days ago.")
+                    return
 
-    delay = RETRY_DELAY
-    for attempt in range(MAX_RETRIES):
-        try:
-            if MODE == "profile":
-                params = {"key": API_KEY, "vanityurl": vanity_url}
-                async with session.get(PROFILE_API, params=params) as resp:
-                    if resp.status == 429:
-                        rate_limited_ids[vanity_url] = now
-                        delay = await handle_rate_limit("id", vanity_url, delay)
-                        continue
+        if vanity_url in rate_limited_ids:
+            last_rl = rate_limited_ids[vanity_url]
+            if now - last_rl < timedelta(minutes=5):
+                return
 
-                    if "application/json" not in resp.headers.get("Content-Type", ""):
-                        log_activity(f"[!] Unexpected content type for id: {vanity_url}")
-                        return
+        delay = RETRY_DELAY
+        for attempt in range(MAX_RETRIES):
+            try:
+                if MODE == "profile":
+                    params = {"key": API_KEY, "vanityurl": vanity_url}
+                    async with session.get(PROFILE_API, params=params) as resp:
+                        if resp.status == 429:
+                            rate_limited_ids[vanity_url] = now
+                            delay = await handle_rate_limit("id", vanity_url, delay)
+                            continue
 
-                    data = await resp.json()
-                    result = data.get("response", {})
-                    success = result.get("success")
+                        if "application/json" not in resp.headers.get("Content-Type", ""):
+                            log_activity(f"[!] Unexpected content type for id: {vanity_url}")
+                            return
 
-                    if success == 1:
-                        log_activity(f"[-] Unavailable: {vanity_url}")
-                        invalid_ids[vanity_url] = now.strftime("%Y-%m-%d")
-                    elif success == 42:
-                        log_activity(f"[+] Available: {vanity_url}")
-                        valid_ids.add(vanity_url)
-                    else:
-                        log_activity(f"[?] Unknown response for id: {vanity_url}: {result}")
+                        data = await resp.json()
+                        result = data.get("response", {})
+                        success = result.get("success")
 
-            elif MODE == "group":
-                url = GROUP_API.format(vanity_url)
-                async with session.get(url) as resp:
-                    if resp.status == 429:
-                        rate_limited_ids[vanity_url] = now
-                        delay = await handle_rate_limit("group id", vanity_url, delay)
-                        continue
+                        if success == 1:
+                            log_activity(f"[-] Unavailable: {vanity_url}")
+                            invalid_ids[vanity_url] = now.strftime("%Y-%m-%d")
+                        elif success == 42:
+                            log_activity(f"[+] Available: {vanity_url}")
+                            valid_ids.add(vanity_url)
+                        else:
+                            log_activity(f"[?] Unknown response for id: {vanity_url}: {result}")
 
-                    text = await resp.text()
-                    if "<groupID64>" in text:
-                        log_activity(f"[-] Unavailable: {vanity_url}")
-                        invalid_ids[vanity_url] = now.strftime("%Y-%m-%d")
-                    elif "No group could be retrieved for the given URL." in text:
-                        log_activity(f"[+] Available: {vanity_url}")
-                        valid_ids.add(vanity_url)
-                    else:
-                        log_activity(f"[?] Unknown response for group: {vanity_url}")
+                elif MODE == "group":
+                    url = GROUP_API.format(vanity_url)
+                    async with session.get(url) as resp:
+                        if resp.status == 429:
+                            rate_limited_ids[vanity_url] = now
+                            delay = await handle_rate_limit("group id", vanity_url, delay)
+                            continue
 
-            rate_limited_ids.pop(vanity_url, None)
-            return
+                        text = await resp.text()
+                        if "<groupID64>" in text:
+                            log_activity(f"[-] Unavailable: {vanity_url}")
+                            invalid_ids[vanity_url] = now.strftime("%Y-%m-%d")
+                        elif "No group could be retrieved for the given URL." in text:
+                            log_activity(f"[+] Available: {vanity_url}")
+                            valid_ids.add(vanity_url)
+                        else:
+                            log_activity(f"[?] Unknown response for group: {vanity_url}")
 
-        except aiohttp.ClientError as e:
-            log_activity(f"[!] Network error on id: {vanity_url}: {e}, retrying in {delay:.1f}s...")
-            await asyncio.sleep(delay + random.uniform(0, 0.5))
-            delay *= 2
+                rate_limited_ids.pop(vanity_url, None)
+                return
 
-    log_activity(f"[!] Failed to check id: {vanity_url} after {MAX_RETRIES} retries.")
+            except aiohttp.ClientError as e:
+                log_activity(f"[!] Network error on id: {vanity_url}: {e}, retrying in {delay:.1f}s...")
+                await asyncio.sleep(delay + random.uniform(0, 0.5))
+                delay *= 2
+
+        log_activity(f"[!] Failed to check id: {vanity_url} after {MAX_RETRIES} retries.")
+        
+    except (ValueError, KeyError, TypeError) as e:
+        log_activity(f"[!] Skipping id: {vanity_url} due to error: {e}")
+
 
 async def run_with_semaphore(semaphore, *args):
     async with semaphore:
@@ -140,27 +150,28 @@ async def run_with_semaphore(semaphore, *args):
 async def main():
     log_activity(f"[*] Running Steam vanity url checker with mode: {MODE}.")
         
-    wordlist = load_json(WORDLIST_FILE, [])
+    wordlist = sorted(set(w.lower() for w in load_json(WORDLIST_FILE, [])))
     skiplist = set()
     if not IGNORE_SKIPLIST:
-        skiplist = set(load_json(SKIPLIST_FILE, []))
+        skiplist = set(w.lower() for w in load_json(SKIPLIST_FILE, []))
     else:
         log_activity("[~] Skiplist ignored due to config setting (ignore_skiplist = true).")
         
-    valid_ids = set(load_json(valid_file, []))
-    invalid_ids = load_json(invalid_file, {})
+    valid_ids = set(w.lower() for w in load_json(valid_file, []))
+    invalid_ids = {k.lower(): v for k, v in load_json(invalid_file, {}).items()}
 
     rate_limited_ids = {}
     semaphore = asyncio.Semaphore(SEM_LIMIT)
     
     filtered_wordlist = []
     for word in wordlist:
-        if len(word) < 3:
+        word_lower = word.lower()
+        if len(word_lower) < 3:
             log_activity(f"[~] Skipped id: (too short): {word}")
-        elif not IGNORE_SKIPLIST and word in skiplist:
+        elif not IGNORE_SKIPLIST and word_lower in skiplist:
             log_activity(f"[~] Skipped id: (in skiplist): {word}")
         else:
-            filtered_wordlist.append(word)
+            filtered_wordlist.append(word_lower)
 
 
     async with aiohttp.ClientSession() as session:

@@ -9,6 +9,7 @@ Python script that checks for available Steam IDs for **user profiles** and **gr
 - Supports checking for both **profile** and **group** IDs
 - Logging to file and console
 - Skiplist support to avoid checking known unassignable IDs
+- Does not check IDs that have been recently checked. Defaults to 7 days, setting can be ignored.
 - Configurable via `config/config.json`
 - Output saves available/unavailable IDs separately
 
@@ -37,7 +38,8 @@ pip install aiohttp
     "retry_delay": 1,
     "max_retries": 5,
     "sem_limit": 2,
-    "ignore_skiplist": false
+    "ignore_skiplist": false,
+    "ignore_check_interval": false
 }
 ```
 
